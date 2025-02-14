@@ -1,0 +1,4 @@
+url: s3://savant-data/models/peoplenet/peoplenet_pruned_v2.0.zip
+checksum_url: s3://savant-data/models/peoplenet/peoplenet_pruned_v2.0.md5
+parameters:
+  endpoint: https://eu-central-1.linodeobjects.com

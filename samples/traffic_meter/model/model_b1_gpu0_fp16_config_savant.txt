@@ -1,0 +1,40 @@
+[property]
+gpu-id = 0
+net-scale-factor = 0.003921569790691137
+model-color-format = 0
+onnx-file = yolov8m.onnx
+model-engine-file = model_b1_gpu0_fp16.engine
+labelfile-path = labels.txt
+batch-size = 1
+network-mode = 2
+num-detected-classes = 80
+interval = 0
+network-type = 0
+cluster-mode = 2
+maintain-aspect-ratio = 1
+symmetric-padding = 1
+parse-bbox-func-name = NvDsInferParseYolo
+custom-lib-path = /opt/savant/lib/libnvdsinfer_custom_impl_Yolo.so
+engine-create-func-name = NvDsInferYoloCudaEngineGet
+workspace-size = 8192
+enable-dla = 0
+use-dla-core = 0
+scaling-compute-hw = 0
+scaling-filter = 0
+offsets = 0.0;0.0;0.0
+output-blob-names = 
+secondary-reinfer-interval = 0
+layer-device-precision = 
+process-mode = 2
+operate-on-gie-id = 0
+operate-on-class-ids = 0
+gie-unique-id = 2
+output-tensor-meta = 0
+
+[class-attrs-all]
+pre-cluster-threshold = 10000000000.0
+
+[class-attrs-0]
+pre-cluster-threshold = 0.5
+nms-iou-threshold = 0.5
+

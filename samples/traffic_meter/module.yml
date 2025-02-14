@@ -1,0 +1,188 @@
+name: ${oc.env:MODULE_NAME, 'tracking_age_gender'}
+
+parameters:
+  frame:
+    width: 1280
+    height: 720
+    geometry_base: 4
+  output_frame:
+    codec: ${oc.env:CODEC, 'h264'}
+  draw_func:
+    module: samples.traffic_meter.overlay
+    # specify the drawfunc's python class from the module
+    class_name: Overlay
+    kwargs:
+      overlay_height: 180
+  detected_object:
+    id: 0
+    label: person
+  age_min: 0
+  age_max: 101
+  detection_model_name: yolov8nface
+  batch_size: 1
+  detector: ${oc.env:DETECTOR, 'yolov8m'}
+  send_stats: True
+
+pipeline:
+
+  elements:
+
+    - group:
+        # enabled if env var DETECTOR==peoplenet
+        init_condition:
+          expr: ${parameters.detector}
+          value: peoplenet
+        elements:
+          # below follows detector unit definition as usual
+          - element: nvinfer@detector
+            name: peoplenet
+            model:
+              format: etlt
+              remote:
+                url: s3://savant-data/models/peoplenet/peoplenet_pruned_v2.0.zip
+                checksum_url: s3://savant-data/models/peoplenet/peoplenet_pruned_v2.0.md5
+                parameters:
+                  endpoint: https://eu-central-1.linodeobjects.com
+              model_file: resnet34_peoplenet_pruned.etlt
+              batch_size: ${parameters.batch_size}
+              input:
+                layer_name: input_1
+                shape: [3, 544, 960]
+                scale_factor: 0.0039215697906911373
+              output:
+                layer_names: [output_bbox/BiasAdd, output_cov/Sigmoid]
+                num_detected_classes: 3
+                objects:
+                  - class_id: ${parameters.detected_object.id}
+                    label: ${parameters.detected_object.label}
+
+    # # variant group: yolov8m detector
+    # # groups are included in the pipeline.elements alongside regular units or other groups
+    # - group:
+    #     # enabled if env var DETECTOR==yolov8m
+    #     init_condition:
+    #       expr: ${parameters.detector}
+    #       value: yolov8m
+    #     elements:
+    #       # below follows detector unit definition as usual
+    #       - element: nvinfer@detector
+    #         name: yolov8m
+    #         model:
+    #           remote:
+    #             url: s3://savant-data/models/yolov8m_f630b10/yolov8m_f630b10.zip
+    #             checksum_url: s3://savant-data/models/yolov8m_f630b10/yolov8m_f630b10.md5
+    #             parameters:
+    #               endpoint: https://eu-central-1.linodeobjects.com
+    #           format: onnx
+    #           model_file: yolov8m.onnx
+    #           config_file: config_infer_primary_yoloV8.txt
+    #           batch_size: ${parameters.batch_size}
+    #           precision: fp16
+    #           # max GPU RAM used to build the engine, 6GB by default
+    #           # set lower than total GPU RAM available on your hardware
+    #           workspace_size: 6144
+    #           output:
+    #             objects:
+    #               - class_id: ${parameters.detected_object.id}
+    #                 label: ${parameters.detected_object.label}
+
+    - group:
+        # enabled if env var DETECTOR==yolov8m
+        init_condition:
+          expr: ${parameters.detector}
+          value: yolov8m
+        elements:
+          # below follows detector unit definition as usual
+          - element: nvinfer@detector
+            name: yolov8m
+            model:                                 
+              local_path: samples/traffic_meter/model
+              format: onnx
+              model_file: yolov8m.onnx
+              config_file: config_infer_primary_yoloV8.txt
+              batch_size: ${parameters.batch_size}
+              # max GPU RAM used to build the engine, 6GB by default
+              # set lower than total GPU RAM available on your hardware
+              workspace_size: 8192
+              output:
+                objects:
+                  - class_id: ${parameters.detected_object.id}
+                    label: ${parameters.detected_object.label}  
+
+    # detector
+    - element: nvinfer@complex_model
+      name: ${parameters.detection_model_name}
+      model:
+        remote:
+          url: s3://savant-data/models/yolov8face/${parameters.detection_model_name}.zip
+          checksum_url: s3://savant-data/models/yolov8face/${parameters.detection_model_name}.md5
+          parameters:
+            endpoint: https://eu-central-1.linodeobjects.com
+        format: onnx
+        config_file: yolov8n-face.txt
+        batch_size: ${parameters.batch_size}
+        input:
+          shape: [3, 640, 640]
+        output:
+          layer_names: [ 'output0' ]
+          converter:
+            module: savant.converter.yolo_v8face
+            class_name: YoloV8faceConverter
+            kwargs:
+              confidence_threshold: 0.6
+              nms_iou_threshold: 0.5
+          objects:
+            - class_id: 0
+              label: face
+              selector:
+                module: savant.selector.detector
+                class_name: MinMaxSizeBBoxSelector
+                kwargs:
+                  min_width: 40
+                  min_height: 40
+          attributes:
+            - name: landmarks
+
+    # tracker
+    - element: nvtracker
+      properties:
+        ll-lib-file: /opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so
+        ll-config-file: ${oc.env:PROJECT_PATH}/samples/assets/tracker/config_tracker_NvDCF_perf.yml
+        tracker-width: 960
+        tracker-height: 544
+        display-tracking-id: 0
+
+    # age-gender estimator
+    - element: nvinfer@attribute_model
+      name: age_gender
+      model:
+        remote:
+          url: s3://savant-data/models/age_gender/age_gender.zip
+          checksum_url: s3://savant-data/models/age_gender/age_gender.md5
+          parameters:
+            endpoint: https://eu-central-1.linodeobjects.com
+        format: onnx
+        config_file: age_gender_mobilenet_v2_dynBatch_config.txt
+        batch_size: 16
+        input:
+          object: ${parameters.detection_model_name}.face
+          preprocess_object_image:
+            module: savant.input_preproc.align_face
+            class_name: AlignFacePreprocessingObjectImageGPU
+        output:
+          layer_names: [ 'age', 'gender' ]
+          converter:
+            module:  samples.traffic_meter.age_gender_converter
+            class_name: AgeGenderConverter
+          attributes:
+            - name: age
+            - name: gender
+
+    # analytics element realized in custom pyfunc
+    - element: pyfunc
+      module: samples.traffic_meter.smoothing
+      class_name: AgeGenderSmoothing
+      kwargs:
+        history_len: 24
+
+

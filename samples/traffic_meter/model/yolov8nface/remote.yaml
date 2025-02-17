@@ -1,4 +1,0 @@
-url: s3://savant-data/models/yolov8face/yolov8nface.zip
-checksum_url: s3://savant-data/models/yolov8face/yolov8nface.md5
-parameters:
-  endpoint: https://eu-central-1.linodeobjects.com

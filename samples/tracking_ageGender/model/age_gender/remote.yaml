@@ -1,0 +1,4 @@
+url: s3://savant-data/models/age_gender/age_gender.zip
+checksum_url: s3://savant-data/models/age_gender/age_gender.md5
+parameters:
+  endpoint: https://eu-central-1.linodeobjects.com

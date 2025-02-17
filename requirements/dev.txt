@@ -1,4 +1,0 @@
-black~=24.4.2
-unify~=0.5
-pytest~=8.2.2
-isort~=5.13.2

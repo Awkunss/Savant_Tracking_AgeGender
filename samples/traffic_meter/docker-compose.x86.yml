@@ -1,26 +1,41 @@
-services:
+version: '3.8'
 
-  video-loop-source:
+services:
+  video-loop-source-1:
     image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
     restart: unless-stopped
     volumes:
       - zmq_sockets:/tmp/zmq-sockets
-      - /tmp/video-loop-source-downloads:/tmp/video-loop-source-downloads
+      - /tmp/video-loop-source-downloads-1:/tmp/video-loop-source-downloads
     environment:
-      # - SOURCE_ID_PATTERN='camera-%d' 
-      # - NUMBER_OF_STREAMS=4
-      # - SHUTDOWN_AUTH=shutdown-key 
       - LOCATION=https://eu-central-1.linodeobjects.com/savant-data/demo/elon_musk.mp4
       - DOWNLOAD_PATH=/tmp/video-loop-source-downloads
-      - ZMQ_ENDPOINT=pub+connect:ipc:///tmp/zmq-sockets/input-video.ipc
-      - SOURCE_ID=tracking
-      - SYNC_OUTPUT=True 
+      - ZMQ_ENDPOINT=pub+connect:ipc:///tmp/zmq-sockets/input-video-1.ipc
+      - SOURCE_ID=tracking-1
+      - SYNC_OUTPUT=True
     entrypoint: /opt/savant/adapters/gst/sources/video_loop.sh
     depends_on:
-      module_tracking:
+      module_tracking-1:
         condition: service_healthy
 
-  module_tracking:
+  video-loop-source-2:
+    image: ghcr.io/insight-platform/savant-adapters-gstreamer:latest
+    restart: unless-stopped
+    volumes:
+      - zmq_sockets:/tmp/zmq-sockets
+      - /tmp/video-loop-source-downloads-2:/tmp/video-loop-source-downloads
+    environment:
+      - LOCATION=https://eu-central-1.linodeobjects.com/savant-data/demo/AVG-TownCentre.mp4
+      - DOWNLOAD_PATH=/tmp/video-loop-source-downloads
+      - ZMQ_ENDPOINT=pub+connect:ipc:///tmp/zmq-sockets/input-video-2.ipc
+      - SOURCE_ID=tracking-2
+      - SYNC_OUTPUT=True
+    entrypoint: /opt/savant/adapters/gst/sources/video_loop.sh
+    depends_on:
+      module_tracking-2:
+        condition: service_healthy
+
+  module_tracking-1:
     build:
       context: .
       dockerfile: docker/Dockerfile.x86
@@ -32,43 +47,87 @@ services:
     environment:
       - MODEL_PATH=samples/traffic_meter/model
       - DOWNLOAD_PATH=samples/traffic_meter/model
-      - ZMQ_SRC_ENDPOINT=sub+bind:ipc:///tmp/zmq-sockets/input-video.ipc
-      - ZMQ_SINK_ENDPOINT=pub+bind:ipc:///tmp/zmq-sockets/output-video.ipc
+      - ZMQ_SRC_ENDPOINT=sub+bind:ipc:///tmp/zmq-sockets/input-video-1.ipc
+      - ZMQ_SINK_ENDPOINT=pub+bind:ipc:///tmp/zmq-sockets/output-video-1.ipc
       - METRICS_FRAME_PERIOD=1000
       - DETECTOR=${DETECTOR}
-      - MODULE_NAME=traffic_meter-${DETECTOR}
+      - MODULE_NAME=traffic_meter-${DETECTOR}-1
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [ gpu ]
+              capabilities: [gpu]
 
-  always-on-sink:
+  module_tracking-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.x86
+    volumes:
+      - zmq_sockets:/tmp/zmq-sockets
+      - ../../cache:/cache
+      - ..:/opt/savant/samples
+    command: samples/traffic_meter/module.yml
+    environment:
+      - MODEL_PATH=samples/traffic_meter/model
+      - DOWNLOAD_PATH=samples/traffic_meter/model
+      - ZMQ_SRC_ENDPOINT=sub+bind:ipc:///tmp/zmq-sockets/input-video-2.ipc
+      - ZMQ_SINK_ENDPOINT=pub+bind:ipc:///tmp/zmq-sockets/output-video-2.ipc
+      - METRICS_FRAME_PERIOD=1000
+      - DETECTOR=${DETECTOR}
+      - MODULE_NAME=traffic_meter-${DETECTOR}-2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  always-on-sink-1:
     image: ghcr.io/insight-platform/savant-adapters-deepstream:latest
     restart: unless-stopped
     ports:
-      - "554:554"    # RTSP
-      - "1935:1935"  # RTMP
-      - "888:888"    # HLS
-      - "8889:8889"  # WebRTC
+      - "8881:888"  # RTSP for tracking-1
     volumes:
       - zmq_sockets:/tmp/zmq-sockets
       - ../assets/stub_imgs:/stub_imgs
     environment:
-      - ZMQ_ENDPOINT=sub+connect:ipc:///tmp/zmq-sockets/output-video.ipc
-      - SOURCE_ID=tracking
+      - ZMQ_ENDPOINT=sub+connect:ipc:///tmp/zmq-sockets/output-video-1.ipc
+      - SOURCE_ID=tracking-1
       - STUB_FILE_LOCATION=/stub_imgs/smpte100_1280x720.jpeg
       - DEV_MODE=True
-    command: python -m adapters.ds.sinks.always_on_rtsp
+    command: python -m adapters.ds.sinks.always_on_rtsp --stream-path /tracking-1
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [ gpu ]
+              capabilities: [gpu]
+
+  always-on-sink-2:
+    image: ghcr.io/insight-platform/savant-adapters-deepstream:latest
+    restart: unless-stopped
+    ports:
+      - "8882:888"  # RTSP for tracking-2
+    volumes:
+      - zmq_sockets:/tmp/zmq-sockets
+      - ../assets/stub_imgs:/stub_imgs
+    environment:
+      - ZMQ_ENDPOINT=sub+connect:ipc:///tmp/zmq-sockets/output-video-2.ipc
+      - SOURCE_ID=tracking-2
+      - STUB_FILE_LOCATION=/stub_imgs/smpte100_1280x720.jpeg
+      - DEV_MODE=True
+    command: python -m adapters.ds.sinks.always_on_rtsp --stream-path /tracking-2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 volumes:
   zmq_sockets:
